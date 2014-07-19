@@ -325,12 +325,10 @@ $(document).ready(function () {
 				// to calculate the correct offset, we need to set the
 				// placeholders correct heights and than set the according position
 				item.height(area.outerHeight(true));
-				// set min width
-				min = (item.width()) ? 0 : 150;
 				area.css({
 					'top': item.offset().top - 5,
-					'left': item.offset().left - min,
-					'width': item.width() + min
+					'left': item.offset().left,
+					'width': Math.max(item.width(), 100)
 				});
 			});
 		},
