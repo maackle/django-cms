@@ -2,6 +2,7 @@
 import six
 from django.utils.translation import ugettext_lazy as _
 from django import forms
+from django.contrib.admin.widgets import RelatedFieldWidgetWrapper
 from django.forms.fields import EMPTY_VALUES
 from cms.models.pagemodel import Page
 from cms.forms.widgets import PageSelectWidget, PageSmartLinkWidget
@@ -32,12 +33,14 @@ class PageSelectFormField(forms.MultiValueField):
     }
 
     def __init__(self, queryset=None, empty_label=u"---------", cache_choices=False,
-                 required=True, widget=None, to_field_name=None, *args, **kwargs):
+                 required=True, widget=None, to_field_name=None, limit_choices_to=None,
+                  *args, **kwargs):
         errors = self.default_error_messages.copy()
         if 'error_messages' in kwargs:
             errors.update(kwargs['error_messages'])
         site_choices = SuperLazyIterator(get_site_choices)
         page_choices = SuperLazyIterator(get_page_choices)
+        self.limit_choices_to = limit_choices_to
         kwargs['required'] = required
         fields = (
             LazyChoiceField(choices=site_choices, required=False, error_messages={'invalid': errors['invalid_site']}),
@@ -55,6 +58,11 @@ class PageSelectFormField(forms.MultiValueField):
                 raise forms.ValidationError(self.error_messages['invalid_page'])
             return Page.objects.get(pk=page_id)
         return None
+
+    def _has_changed(self, initial, data):
+        if isinstance(self.widget, RelatedFieldWidgetWrapper):
+            self.widget.decompress = self.widget.widget.decompress
+        return super(PageSelectFormField, self)._has_changed(initial, data)
 
 class PageSmartLinkField(forms.CharField):
     widget = PageSmartLinkWidget

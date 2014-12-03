@@ -3,12 +3,12 @@ from __future__ import with_statement
 import shutil
 from os.path import join
 from cms.utils.conf import get_cms_setting
+from cms.utils.urlutils import admin_reverse
 
 from djangocms_text_ckeditor.models import Text
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.core.urlresolvers import reverse
 import reversion
 from reversion.models import Revision, Version
 
@@ -131,13 +131,13 @@ class ReversionTestCase(TransactionCMSTestCase):
             Version.objects.get(content_type=ctype, revision=revision)
             page = Page.objects.all()[0]
 
-            undo_url = reverse("admin:cms_page_undo", args=[page.pk])
+            undo_url = admin_reverse("cms_page_undo", args=[page.pk])
             response = self.client.post(undo_url)
             self.assertEqual(response.status_code, 200)
             page = Page.objects.all()[0]
             self.assertTrue(page.revision_id != 0)
             rev = page.revision_id
-            redo_url = reverse("admin:cms_page_redo", args=[page.pk])
+            redo_url = admin_reverse("cms_page_redo", args=[page.pk])
             response = self.client.post(redo_url)
             self.assertEqual(response.status_code, 200)
             page = Page.objects.all()[0]
@@ -190,11 +190,11 @@ class ReversionTestCase(TransactionCMSTestCase):
             response = self.client.post(URL_CMS_PAGE_CHANGE % page2.pk, data2)
             self.assertEqual(response.status_code, 302)
 
-            undo_url = reverse("admin:cms_page_undo", args=[page1.pk])
+            undo_url = admin_reverse("cms_page_undo", args=[page1.pk])
             response = self.client.post(undo_url)
             self.assertEqual(response.status_code, 200)
             self.assertEqual(Title.objects.get(page=page1).slug, 'page3')
-            response = self.client.get(reverse("admin:cms_page_changelist"))
+            response = self.client.get(admin_reverse("cms_page_changelist"))
             self.assertEqual(response.status_code, 200)
             response = self.client.get('/en/?%s' % get_cms_setting('CMS_TOOLBAR_URL__EDIT_ON'))
             self.assertEqual(response.status_code, 200)
@@ -237,6 +237,49 @@ class ReversionTestCase(TransactionCMSTestCase):
 
             # test that CMSPlugin subclasses are recovered
             self.assertEqual(Text.objects.all().count(), 1)
+
+    def test_recover_path_collision(self):
+        with self.login_user_context(self.user):
+            self.assertEqual(Page.objects.count(), 2)
+            page_data2 = self.get_new_page_data()
+            response = self.client.post(URL_CMS_PAGE_ADD, page_data2)
+            self.assertRedirects(response, URL_CMS_PAGE)
+
+            page_data3 = self.get_new_page_data()
+            response = self.client.post(URL_CMS_PAGE_ADD, page_data3)
+            self.assertRedirects(response, URL_CMS_PAGE)
+            page2 = Page.objects.all()[2]
+            page3 = Page.objects.all()[3]
+
+            self.assertEqual(page3.path, '0004')
+
+            ctype = ContentType.objects.get_for_model(Page)
+            revision = Revision.objects.order_by('-pk')[1]
+            version = Version.objects.filter(content_type=ctype, revision=revision)[0]
+            page2_pk = page2.pk
+            page2.delete()
+            self.assertEqual(Page.objects.count(), 3)
+            page_data4 = self.get_new_page_data()
+            response = self.client.post(URL_CMS_PAGE_ADD, page_data4)
+            self.assertRedirects(response, URL_CMS_PAGE)
+            page4 = Page.objects.all()[3]
+            self.assertEqual(Page.objects.count(), 4)
+            self.assertEqual(page4.path, '0005')
+
+            recover_url = URL_CMS_PAGE + "recover/"
+            response = self.client.get(recover_url)
+            self.assertEqual(response.status_code, 200)
+
+            recover_url += "%s/" % version.pk
+            response = self.client.get(recover_url)
+            self.assertEqual(response.status_code, 200)
+            response = self.client.post(recover_url, page_data2)
+            self.assertRedirects(response, URL_CMS_PAGE_CHANGE % page2_pk)
+            self.assertEqual(Page.objects.all().count(), 5)
+
+
+
+
 
     def test_publish_limits(self):
         with self.login_user_context(self.user):

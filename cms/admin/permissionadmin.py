@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 from copy import deepcopy
-
 from django.contrib import admin
+from django.contrib.admin import site
+from django.contrib.auth.admin import UserAdmin
 from django.utils.translation import ugettext as _
 
 from cms.admin.forms import GlobalPagePermissionAdminForm, PagePermissionInlineAdminForm, ViewRestrictionInlineAdminForm
@@ -14,6 +15,11 @@ from cms.utils.permissions import get_user_permission_level
 
 PERMISSION_ADMIN_INLINES = []
 
+user_model = get_user_model()
+admin_class = UserAdmin
+for model, admin_instance in site._registry.items():
+    if model == user_model:
+        admin_class = admin_instance.__class__
 
 class TabularInline(admin.TabularInline):
     pass
@@ -35,7 +41,7 @@ class PagePermissionInlineAdmin(TabularInline):
             return ['user']
         return []
 
-    def queryset(self, request):
+    def get_queryset(self, request):
         """
         Queryset change, so user with global change permissions can see
         all permissions. Otherwise can user see only permissions for 
@@ -71,7 +77,7 @@ class PagePermissionInlineAdmin(TabularInline):
                 exclude.append('can_move_page')
         formset_cls = super(PagePermissionInlineAdmin, self
         ).get_formset(request, obj=None, exclude=exclude, **kwargs)
-        qs = self.queryset(request)
+        qs = self.get_queryset(request)
         if obj is not None:
             qs = qs.filter(page=obj)
         formset_cls._queryset = qs
@@ -96,13 +102,13 @@ class ViewRestrictionInlineAdmin(PagePermissionInlineAdmin):
         flag, he can't change assign can_publish permissions.
         """
         formset_cls = super(PagePermissionInlineAdmin, self).get_formset(request, obj, **kwargs)
-        qs = self.queryset(request)
+        qs = self.get_queryset(request)
         if obj is not None:
             qs = qs.filter(page=obj)
         formset_cls._queryset = qs
         return formset_cls
 
-    def queryset(self, request):
+    def get_queryset(self, request):
         """
         Returns a QuerySet of all model instances that can be edited by the
         admin site. This is used by changelist_view.
@@ -116,8 +122,10 @@ class GlobalPagePermissionAdmin(admin.ModelAdmin):
     list_filter = ['user', 'group', 'can_change', 'can_delete', 'can_publish', 'can_change_permissions']
 
     form = GlobalPagePermissionAdminForm
-
-    search_fields = ('user__'+get_user_model().USERNAME_FIELD, 'user__first_name', 'user__last_name', 'group__name')
+    search_fields = []
+    for field in admin_class.search_fields:
+        search_fields.append("user__%s" % field)
+    search_fields.append('group__name')
 
     exclude = []
 

@@ -2,6 +2,8 @@
 from __future__ import with_statement
 import json
 import datetime
+from cms import api
+from cms.utils.urlutils import admin_reverse
 
 from djangocms_text_ckeditor.cms_plugins import TextPlugin
 from djangocms_text_ckeditor.models import Text
@@ -75,6 +77,7 @@ class AdminTestsBase(CMSTestCase):
 
 
 class AdminTestCase(AdminTestsBase):
+
     def test_permissioned_page_list(self):
         """
         Makes sure that a user with restricted page permissions can view
@@ -135,7 +138,6 @@ class AdminTestCase(AdminTestsBase):
             'pagepermission_set-2-MAX_NUM_FORMS': 0
         }
         # required only if user haves can_change_permission
-
         with self.login_user_context(normal_guy):
             resp = self.client.post(base.URL_CMS_PAGE_CHANGE % page.pk, page_data,
                                     follow=True)
@@ -148,22 +150,21 @@ class AdminTestCase(AdminTestsBase):
             title = page.get_title_obj()
             self.assertEqual(title.overwrite_url, OVERRIDE_URL)
 
-            # The admin edits the page (change the page name for ex.)
-            page_data = {
-                'title': OLD_PAGE_NAME,
-                'slug': page.get_slug(),
-                'language': title.language,
-                'site': page.site.pk,
-                'template': page.template,
-                'reverse_id': page.reverse_id,
-                'pagepermission_set-TOTAL_FORMS': 0,  # required only if user haves can_change_permission
-                'pagepermission_set-INITIAL_FORMS': 0,
-                'pagepermission_set-MAX_NUM_FORMS': 0,
-                'pagepermission_set-2-TOTAL_FORMS': 0,
-                'pagepermission_set-2-INITIAL_FORMS': 0,
-                'pagepermission_set-2-MAX_NUM_FORMS': 0
-            }
-
+        # The admin edits the page (change the page name for ex.)
+        page_data = {
+            'title': OLD_PAGE_NAME,
+            'slug': page.get_slug(),
+            'language': title.language,
+            'site': page.site.pk,
+            'template': page.template,
+            'reverse_id': page.reverse_id,
+            'pagepermission_set-TOTAL_FORMS': 0,  # required only if user haves can_change_permission
+            'pagepermission_set-INITIAL_FORMS': 0,
+            'pagepermission_set-MAX_NUM_FORMS': 0,
+            'pagepermission_set-2-TOTAL_FORMS': 0,
+            'pagepermission_set-2-INITIAL_FORMS': 0,
+            'pagepermission_set-2-MAX_NUM_FORMS': 0
+        }
         with self.login_user_context(admin_user):
             resp = self.client.post(base.URL_CMS_PAGE_CHANGE % page.pk, page_data,
                                     follow=True)
@@ -174,7 +175,7 @@ class AdminTestCase(AdminTestsBase):
             self.assertEqual(page.get_title(), OLD_PAGE_NAME)
             self.assertEqual(page.reverse_id, REVERSE_ID)
             title = page.get_title_obj()
-            self.assertEqual(title.overwrite_url, None)
+            self.assertEqual(title.overwrite_url, OVERRIDE_URL)
 
     def test_edit_does_not_reset_apphook(self):
         """
@@ -310,7 +311,7 @@ class AdminTestCase(AdminTestsBase):
         page.publish('en')
         with self.login_user_context(admin_user):
             data = {'post': 'yes'}
-            with self.assertNumQueries(FuzzyInt(300, 397)):
+            with self.assertNumQueries(FuzzyInt(300, 405)):
                 response = self.client.post(URL_CMS_PAGE_DELETE % page.pk, data)
             self.assertRedirects(response, URL_CMS_PAGE)
 
@@ -327,7 +328,7 @@ class AdminTestCase(AdminTestsBase):
         page.publish('en')
         with self.login_user_context(admin_user):
             data = {'post': 'yes'}
-            with self.assertNumQueries(FuzzyInt(300, 385)):
+            with self.assertNumQueries(FuzzyInt(300, 392)):
                 response = self.client.post(URL_CMS_PAGE_DELETE % page.pk, data)
             self.assertRedirects(response, URL_CMS_PAGE)
 
@@ -341,7 +342,7 @@ class AdminTestCase(AdminTestsBase):
                     continue
                 if not admin_instance.search_fields:
                     continue
-                url = reverse('admin:cms_%s_changelist' % model._meta.module_name)
+                url = admin_reverse('cms_%s_changelist' % model._meta.module_name)
                 response = self.client.get('%s?q=1' % url)
                 errmsg = response.content
                 self.assertEqual(response.status_code, 200, errmsg)
@@ -373,7 +374,7 @@ class AdminTestCase(AdminTestsBase):
             original_end_date = draft.publication_end_date
             new_date = timezone.now() - datetime.timedelta(days=1)
             new_end_date = timezone.now() + datetime.timedelta(days=1)
-            url = reverse('admin:cms_page_dates', args=(draft.pk,))
+            url = admin_reverse('cms_page_dates', args=(draft.pk,))
             with self.login_user_context(admin_user):
                 response = self.client.post(url, {
                     'language': 'en',
@@ -396,7 +397,7 @@ class AdminTestCase(AdminTestsBase):
             original_end_date = draft.publication_end_date
             new_date = timezone.localtime(timezone.now()) - datetime.timedelta(days=1)
             new_end_date = timezone.localtime(timezone.now()) + datetime.timedelta(days=1)
-            url = reverse('admin:cms_page_dates', args=(draft.pk,))
+            url = admin_reverse('cms_page_dates', args=(draft.pk,))
             with self.login_user_context(admin_user):
                 response = self.client.post(url, {
                     'language': 'en',
@@ -424,7 +425,7 @@ class AdminTestCase(AdminTestsBase):
             page = create_page('test-page', 'nav_playground.html', 'en')
             response = pageadmin.change_template(request, page.pk)
             self.assertEqual(response.status_code, 403)
-        url = reverse('admin:cms_page_change_template', args=(page.pk,))
+        url = admin_reverse('cms_page_change_template', args=(page.pk,))
         with self.login_user_context(admin_user):
             response = self.client.post(url, {'template': 'doesntexist'})
             self.assertEqual(response.status_code, 400)
@@ -433,7 +434,7 @@ class AdminTestCase(AdminTestsBase):
 
     def test_get_permissions(self):
         page = create_page('test-page', 'nav_playground.html', 'en')
-        url = reverse('admin:cms_page_get_permissions', args=(page.pk,))
+        url = admin_reverse('cms_page_get_permissions', args=(page.pk,))
         response = self.client.get(url)
         if DJANGO_1_6:
             self.assertEqual(response.status_code, 200)
@@ -459,7 +460,7 @@ class AdminTestCase(AdminTestsBase):
                                        created_by=admin_user, published=True, parent=second_level_page_top)
         self.assertEqual(Page.objects.all().count(), 4)
 
-        url = reverse('admin:cms_%s_changelist' % Page._meta.module_name)
+        url = admin_reverse('cms_%s_changelist' % Page._meta.module_name)
         request = self.get_request(url)
 
         request.session = {}
@@ -501,7 +502,7 @@ class AdminTestCase(AdminTestsBase):
         third_level_page = create_page('level3', "nav_playground.html", "en",
                                        created_by=admin_user, published=True, parent=second_level_page_top)
 
-        url = reverse('admin:cms_%s_changelist' % Page._meta.module_name)
+        url = admin_reverse('cms_%s_changelist' % Page._meta.module_name)
 
         if get_user_model().USERNAME_FIELD == 'email':
             self.client.login(username='admin@django-cms.org', password='admin@django-cms.org')
@@ -550,7 +551,7 @@ class AdminTestCase(AdminTestsBase):
         # Add a es-mx translation for this page
         create_title("es-mx", es_title, page, slug="es_pagina")
 
-        url = reverse('admin:cms_%s_changelist' % Page._meta.module_name)
+        url = admin_reverse('cms_%s_changelist' % Page._meta.module_name)
         url_pat = '<a href="{0}/{1}/preview/"[^>]*>{2}</a>'
 
         with self.login_user_context(admin_guy):
@@ -660,6 +661,9 @@ class AdminTests(AdminTestsBase):
             request = self.get_request(post_data={'no': 'data'})
             old = page.in_navigation
             response = self.admin_class.change_innavigation(request, page.pk)
+            # These asserts are for #3589
+            self.assertContains(response, 'lang="en"')
+            self.assertContains(response, './%s/en/preview/' % page.pk)
             self.assertEqual(response.status_code, 200)
             page = self.reload(page)
             self.assertEqual(old, not page.in_navigation)
@@ -691,9 +695,6 @@ class AdminTests(AdminTestsBase):
         self.assertTrue(title.publisher_is_draft)
         self.assertTrue(new_title.publisher_is_draft)
 
-
-
-
     def test_revert_page_requires_perms(self):
         permless = self.get_permless()
         with self.login_user_context(permless):
@@ -706,7 +707,7 @@ class AdminTests(AdminTestsBase):
         admin_user = self.get_admin()
         self.page.publish("en")  # Ensure public copy exists before reverting
         with self.login_user_context(admin_user):
-            response = self.client.get(reverse('admin:cms_page_revert_page', args=(self.page.pk, 'en')))
+            response = self.client.get(admin_reverse('cms_page_revert_page', args=(self.page.pk, 'en')))
             self.assertEqual(response.status_code, 302)
             url = response['Location']
             self.assertTrue(url.endswith('?%s' % get_cms_setting('CMS_TOOLBAR_URL__EDIT_OFF')))
@@ -818,7 +819,7 @@ class AdminTests(AdminTestsBase):
             },
         }
         admin_user = self.get_admin()
-        url = reverse('admin:cms_page_add_plugin')
+        url = admin_reverse('cms_page_add_plugin')
         with SettingsOverride(CMS_PERMISSION=False,
                               CMS_PLACEHOLDER_CONF=conf):
             page = create_page('somepage', 'nav_playground.html', 'en')
@@ -842,7 +843,7 @@ class AdminTests(AdminTestsBase):
             },
         }
         admin_user = self.get_admin()
-        url = reverse('admin:cms_page_add_plugin')
+        url = admin_reverse('cms_page_add_plugin')
         with SettingsOverride(CMS_PERMISSION=False,
                               CMS_PLACEHOLDER_CONF=conf):
             page = create_page('somepage', 'nav_playground.html', 'en')
@@ -897,6 +898,21 @@ class AdminTests(AdminTestsBase):
             self.client.post(admin_url, post_data)
             draft_page = Page.objects.get(pk=page.pk).get_draft_object()
             self.assertTrue(draft_page.is_dirty('en'))
+
+    def test_page_form_leak(self):
+        language = "en"
+        admin_user = self.get_admin()
+        request = self.get_request('/', 'en')
+        request.user = admin_user
+        page = create_page('A', 'nav_playground.html', language, menu_title='menu title')
+        page_admin = PageAdmin(Page, site)
+        page_admin._current_page = page
+
+        edit_form = page_admin.get_form(request, page)
+        add_form = page_admin.get_form(request, None)
+
+        self.assertEqual(edit_form.base_fields['menu_title'].initial, 'menu title')
+        self.assertEqual(add_form.base_fields['menu_title'].initial, None)
 
 
 class NoDBAdminTests(CMSTestCase):
@@ -979,7 +995,7 @@ class PluginPermissionTests(AdminTestsBase):
         else:
             self.client.login(username='admin', password='admin')
 
-        url = reverse('admin:cms_page_add_plugin')
+        url = admin_reverse('cms_page_add_plugin')
         data = {
             'plugin_type': 'TextPlugin',
             'placeholder_id': self._placeholder.pk,
@@ -1002,7 +1018,7 @@ class PluginPermissionTests(AdminTestsBase):
         else:
             self.client.login(username='test', password='test')
 
-        url = reverse('admin:cms_page_edit_plugin', args=[plugin.id])
+        url = admin_reverse('cms_page_edit_plugin', args=[plugin.id])
         response = self.client.post(url, dict())
         self.assertEqual(response.status_code, HttpResponseForbidden.status_code)
         # After he got the permissions, he can edit the plugin
@@ -1020,7 +1036,7 @@ class PluginPermissionTests(AdminTestsBase):
         else:
             self.client.login(username='test', password='test')
 
-        url = reverse('admin:cms_page_delete_plugin', args=[plugin.pk])
+        url = admin_reverse('cms_page_delete_plugin', args=[plugin.pk])
         data = dict(plugin_id=plugin.id)
         response = self.client.post(url, data)
         self.assertEqual(response.status_code, HttpResponseForbidden.status_code)
@@ -1039,7 +1055,7 @@ class PluginPermissionTests(AdminTestsBase):
         else:
             self.client.login(username='test', password='test')
 
-        url = reverse('admin:cms_page_move_plugin')
+        url = admin_reverse('cms_page_move_plugin')
         data = dict(plugin_id=plugin.id,
                     placeholder_id=self._placeholder.pk,
                     plugin_parent='',
@@ -1061,7 +1077,7 @@ class PluginPermissionTests(AdminTestsBase):
         else:
             self.client.login(username='test', password='test')
 
-        url = reverse('admin:cms_page_copy_plugins')
+        url = admin_reverse('cms_page_copy_plugins')
         data = dict(source_plugin_id=plugin.id,
                     source_placeholder_id=self._placeholder.pk,
                     source_language='en',
@@ -1094,7 +1110,7 @@ class PluginPermissionTests(AdminTestsBase):
         else:
             self.client.login(username='admin', password='admin')
 
-        url = reverse('admin:cms_page_copy_plugins')
+        url = admin_reverse('cms_page_copy_plugins')
         data = dict(source_plugin_id='',
                     source_placeholder_id=self._placeholder.pk,
                     source_language='en',
@@ -1123,7 +1139,7 @@ class PluginPermissionTests(AdminTestsBase):
         self.assertEqual(plugins.count(), 4)
         self.assertEqual(CMSPlugin.objects.count(), 7)
         self.assertEqual(Placeholder.objects.count(), 4)
-        url = reverse('admin:cms_page_clear_placeholder', args=[clipboard.pk])
+        url = admin_reverse('cms_page_clear_placeholder', args=[clipboard.pk])
         with self.assertNumQueries(FuzzyInt(70, 80)):
             response = self.client.post(url, {'test': 0})
         self.assertEqual(response.status_code, 302)
@@ -1141,7 +1157,7 @@ class PluginPermissionTests(AdminTestsBase):
             self.client.login(username='test@test.com', password='test@test.com')
 
         self.assertEqual(1, CMSPlugin.objects.all().count())
-        url = reverse('admin:cms_page_copy_language', args=[self._page.pk])
+        url = admin_reverse('cms_page_copy_language', args=[self._page.pk])
         data = dict(
             source_language='en',
             target_language='fr',
@@ -1229,7 +1245,7 @@ class PluginPermissionTests(AdminTestsBase):
         username = getattr(admin_user, get_user_model().USERNAME_FIELD)
         self.client.login(username=username, password='admin')
 
-        url = reverse('admin:cms_page_add_plugin')
+        url = admin_reverse('cms_page_add_plugin')
         data = {
             'plugin_type': 'TextPlugin',
             'placeholder_id': self._placeholder.pk,
@@ -1262,7 +1278,6 @@ class AdminFormsTests(AdminTestsBase):
 
             form = PageForm(data)
             self.assertTrue(form.is_valid(), form.errors.as_text())
-            # WTF? WHY DOES form.save() not handle this stuff???
             instance = form.save()
             instance.permission_user_cache = user
             instance.permission_advanced_settings_cache = True
@@ -1289,6 +1304,87 @@ class AdminFormsTests(AdminTestsBase):
         self.assertFalse(form.is_valid())
         self.assertIn(u"Site doesn't match the parent's page site",
                       form.errors['__all__'])
+
+    def test_form_errors(self):
+
+        new_page_data = {
+            'title': 'Title',
+            'slug': 'home',
+            'language': 'en',
+            'site': 10,
+            'template': get_cms_setting('TEMPLATES')[0][0],
+            'reverse_id': '',
+        }
+        form = PageForm(data=new_page_data, files=None)
+        self.assertFalse(form.is_valid())
+        site0 = Site.objects.create(domain='foo.com', name='foo.com')
+        page1 = api.create_page("test", get_cms_setting('TEMPLATES')[0][0], "fr", site=site0)
+
+        new_page_data = {
+            'title': 'Title',
+            'slug': 'home',
+            'language': 'en',
+            'site': 1,
+            'template': get_cms_setting('TEMPLATES')[0][0],
+            'reverse_id': '',
+            'parent': page1.pk,
+        }
+        form = PageForm(data=new_page_data, files=None)
+        self.assertFalse(form.is_valid())
+
+        new_page_data = {
+            'title': 'Title',
+            'slug': '#',
+            'language': 'en',
+            'site': 1,
+            'template': get_cms_setting('TEMPLATES')[0][0],
+            'reverse_id': '',
+        }
+        form = PageForm(data=new_page_data, files=None)
+        self.assertFalse(form.is_valid())
+
+        new_page_data = {
+            'title': 'Title',
+            'slug': 'home',
+            'language': 'pp',
+            'site': 1,
+            'template': get_cms_setting('TEMPLATES')[0][0],
+            'reverse_id': '',
+            'parent':'',
+        }
+        form = PageForm(data=new_page_data, files=None)
+        self.assertFalse(form.is_valid())
+
+
+        page2 = api.create_page("test", get_cms_setting('TEMPLATES')[0][0], "en")
+        new_page_data = {
+            'title': 'Title',
+            'slug': 'test',
+            'language': 'en',
+            'site': 1,
+            'template': get_cms_setting('TEMPLATES')[0][0],
+            'reverse_id': '',
+            'parent':'',
+        }
+        form = PageForm(data=new_page_data, files=None)
+        self.assertFalse(form.is_valid())
+
+        page3 = api.create_page("test", get_cms_setting('TEMPLATES')[0][0], "en", parent=page2)
+        page3.title_set.update(path="hello/")
+        page3 = page3.reload()
+        new_page_data = {
+            'title': 'Title',
+            'slug': 'test',
+            'language': 'en',
+            'site': 1,
+            'template': get_cms_setting('TEMPLATES')[0][0],
+            'reverse_id': '',
+            'parent':'',
+        }
+        form = PageForm(data=new_page_data, files=None, instance=page3)
+        self.assertFalse(form.is_valid())
+
+
 
     def test_reverse_id_error_location(self):
         ''' Test moving the reverse_id validation error to a field specific one '''
@@ -1348,7 +1444,7 @@ class AdminFormsTests(AdminTestsBase):
         superuser = self.get_superuser()
         with self.login_user_context(superuser):
             response = self.client.get(
-                "%s?copy_target=%s&language=%s" % (reverse("admin:cms_page_add_page_type"), page.pk, 'en'))
+                "%s?copy_target=%s&language=%s" % (admin_reverse("cms_page_add_page_type"), page.pk, 'en'))
             self.assertEqual(response.status_code, 302)
             self.assertEqual(Page.objects.count(), 3)
             self.assertEqual(Page.objects.filter(reverse_id="page_types").count(), 1)
@@ -1359,11 +1455,11 @@ class AdminFormsTests(AdminTestsBase):
             response_url_params = QueryDict(urlparse(url).query)
             self.assertDictEqual(expected_url_params, response_url_params)
             response = self.client.get("%s?copy_target=%s&language=%s" % (
-                reverse("admin:cms_page_add_page_type"), page.pk, 'en'), follow=True)
+                admin_reverse("cms_page_add_page_type"), page.pk, 'en'), follow=True)
             self.assertEqual(response.status_code, 200)
 
             # test no page types if no page types there
-            response = self.client.get(reverse('admin:cms_page_add'))
+            response = self.client.get(admin_reverse('cms_page_add'))
             self.assertNotContains(response, "page_type")
             # create out first page type
             page_data = {
@@ -1376,10 +1472,10 @@ class AdminFormsTests(AdminTestsBase):
             self.assertEqual(response.status_code, 302)
             self.assertEqual(Page.objects.count(), 4)
             self.assertEqual(CMSPlugin.objects.count(), 6)
-            response = self.client.get(reverse('admin:cms_page_add'))
+            response = self.client.get(admin_reverse('cms_page_add'))
             self.assertContains(response, "page_type")
             # no page types available if you use the copy_target
-            response = self.client.get("%s?copy_target=%s&language=en" % (reverse('admin:cms_page_add'), page.pk))
+            response = self.client.get("%s?copy_target=%s&language=en" % (admin_reverse('cms_page_add'), page.pk))
             self.assertNotContains(response, "page_type")
 
     def test_render_edit_mode(self):
@@ -1405,7 +1501,7 @@ class AdminFormsTests(AdminTestsBase):
             self.assertIn('<b>Test</b>', output)
         with self.assertNumQueries(FuzzyInt(18, 34)):
             force_unicode(self.client.get('/en/?%s' % get_cms_setting('CMS_TOOLBAR_URL__EDIT_ON')).content)
-        with self.assertNumQueries(FuzzyInt(12, 14)):
+        with self.assertNumQueries(FuzzyInt(11, 13)):
             force_unicode(self.client.get('/en/').content)
 
     def test_tree_view_queries(self):

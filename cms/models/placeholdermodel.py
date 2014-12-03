@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from django.core.urlresolvers import reverse
+from cms.utils.urlutils import admin_reverse
 from django.db import models
 from django.template.defaultfilters import title
 from django.utils.encoding import force_text
@@ -18,9 +18,16 @@ from cms.utils.placeholder import PlaceholderNoAction, get_placeholder_conf
 
 @python_2_unicode_compatible
 class Placeholder(models.Model):
-    slot = models.CharField(_("slot"), max_length=50, db_index=True, editable=False)
+    """
+    Attributes:
+        is_static       Set to "True" for static placeholders by the template tag
+        is_editable     If False the content of the placeholder is not editable in the frontend
+    """
+    slot = models.CharField(_("slot"), max_length=255, db_index=True, editable=False)
     default_width = models.PositiveSmallIntegerField(_("width"), null=True, editable=False)
     cache_placeholder = True
+    is_static = False
+    is_editable = True
 
     class Meta:
         app_label = 'cms'
@@ -33,16 +40,16 @@ class Placeholder(models.Model):
             qs = self.cmsplugin_set.filter(language=language)
         else:
             qs = self.cmsplugin_set.all()
-        qs = qs.order_by('-level').select_related()
+        qs = qs.order_by('-depth').select_related()
         for plugin in qs:
             inst, cls = plugin.get_plugin_instance()
             if inst and getattr(inst, 'cmsplugin_ptr', False):
                 inst.cmsplugin_ptr._no_reorder = True
                 inst._no_reorder = True
-                inst.delete(no_mptt=True)
+                inst.delete(no_mp=True)
             else:
                 plugin._no_reorder = True
-                plugin.delete(no_mptt=True)
+                plugin.delete(no_mp=True)
 
     def get_label(self):
         name = get_placeholder_conf("name", self.slot, default=title(self.slot))
@@ -87,11 +94,11 @@ class Placeholder(models.Model):
         if pk:
             args.append(pk)
         if not model:
-            return reverse('admin:cms_page_%s' % key, args=args)
+            return admin_reverse('cms_page_%s' % key, args=args)
         else:
             app_label = model._meta.app_label
             model_name = model.__name__.lower()
-            return reverse('admin:%s_%s_%s' % (app_label, model_name, key), args=args)
+            return admin_reverse('%s_%s_%s' % (app_label, model_name, key), args=args)
 
     def _get_permission(self, request, key):
         """
@@ -107,21 +114,10 @@ class Placeholder(models.Model):
             return self._get_object_permission(obj, request, key)
 
     def _get_object_permission(self, obj, request, key):
-        found = False
-        model = obj.__class__
-        opts = model._meta
+        opts = obj._meta
         perm_accessor = getattr(opts, 'get_%s_permission' % key)
         perm_code = '%s.%s' % (opts.app_label, perm_accessor())
-        # if they don't have the permission for this attached model or object, bail out
-        if not (request.user.has_perm(perm_code) or request.user.has_perm(perm_code, obj)):
-            return False
-        else:
-            found = True
-        if not (request.user.has_perm(perm_code) or request.user.has_perm(perm_code, obj)):
-            return False
-        else:
-            found = True
-        return found
+        return request.user.has_perm(perm_code) or request.user.has_perm(perm_code, obj)
 
     def has_change_permission(self, request):
         return self._get_permission(request, 'change')
@@ -157,8 +153,11 @@ class Placeholder(models.Model):
                 from cms.admin.placeholderadmin import PlaceholderAdminMixin
                 if rel.model in admin.site._registry and isinstance(admin.site._registry[rel.model], PlaceholderAdminMixin):
                     field = getattr(self, rel.get_accessor_name())
-                    if field.count():
-                        self._attached_fields_cache.append(rel.field)
+                    try:
+                        if field.count():
+                            self._attached_fields_cache.append(rel.field)
+                    except:
+                        pass
         return self._attached_fields_cache
 
     def _get_attached_field(self):
@@ -176,9 +175,12 @@ class Placeholder(models.Model):
                 from cms.admin.placeholderadmin import PlaceholderAdminMixin
                 if rel.model in admin.site._registry and isinstance(admin.site._registry[rel.model], PlaceholderAdminMixin):
                     field = getattr(self, rel.get_accessor_name())
-                    if field.count():
-                        self._attached_field_cache = rel.field
-                        break
+                    try:
+                        if field.count():
+                            self._attached_field_cache = rel.field
+                            break
+                    except:
+                        pass
         return self._attached_field_cache
 
     def _get_attached_field_name(self):
@@ -236,9 +238,9 @@ class Placeholder(models.Model):
 
     def get_plugins(self, language=None):
         if language:
-            return self.cmsplugin_set.filter(language=language).order_by('tree_id', 'lft')
+            return self.cmsplugin_set.filter(language=language).order_by('path')
         else:
-            return self.cmsplugin_set.all().order_by('tree_id', 'lft')
+            return self.cmsplugin_set.all().order_by('path')
 
     def get_filled_languages(self):
         """
